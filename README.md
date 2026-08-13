@@ -24,9 +24,21 @@ Then open <http://localhost:4173>.
 
 The test puzzle is seeded from the current coaching session.
 
-## Real LLM backend
+## Human-style engine
 
-`backend.py` is a FastAPI service that validates the grid, calculates deterministic Sudoku evidence, and calls the OpenAI-compatible Hermes API. It never puts the Hermes API key in the frontend.
+`sudo-coach` uses the MIT-licensed [`dedoku`](https://github.com/n36l3c7/Dedoku) package through the local `sudoku_engine.py` adapter. Dedoku runs a logic-only pipeline by default and returns immutable steps containing:
+
+- the technique used;
+- a human-readable description;
+- placements;
+- candidate eliminations.
+
+The adapter adds the live-state contract needed by the coach: persistent candidate eliminations, candidate snapshots, invalid-note checks, one next step, and a catalogue of one verified example per currently available technique. Backtracking is not enabled for coaching. Hermes receives only the selected deterministic fact and writes the explanation; it does not solve or validate the Sudoku.
+
+The engine is covered by deterministic tests in `test_sudoku_engine.py` and `test_engine_integration.py`.
+
+
+`backend.py` is a FastAPI service that validates the grid, calculates deterministic Sudoku evidence through the human-style `sudoku_engine.py` adapter (Dedoku), and calls the OpenAI-compatible Hermes API. The engine is the source of truth; Hermes only turns verified deductions into coaching language. It never puts the Hermes API key in the frontend.
 
 ```bash
 python3 -m venv .venv

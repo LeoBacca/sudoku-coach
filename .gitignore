@@ -3,3 +3,4 @@ __pycache__/
 *.py[cod]
 .env
 *.log
+ai_vs_ai_results.json

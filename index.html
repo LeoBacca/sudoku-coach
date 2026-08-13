@@ -105,8 +105,24 @@
     .kbd { border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding: 1px 5px; background:var(--white); color:var(--ink); font-family:ui-monospace, monospace; font-size:10px; }
     .toast { position:fixed; bottom:20px; left:50%; transform:translate(-50%, 18px); opacity:0; pointer-events:none; padding:11px 14px; border-radius:10px; background:var(--ink); color:var(--white); font-size:12px; transition:.2s; box-shadow:var(--shadow); }
     .toast.show { opacity:1; transform:translate(-50%,0); }
-    @media (max-width: 980px) { main { grid-template-columns: 1fr; max-width: 720px; } .chat-card { height: 640px; } .status { max-width:none; } }
-    @media (max-width: 560px) { header { padding:0 16px; } .brand-sub, .header-actions .button:not(.primary) { display:none; } main { padding:22px 14px 28px; gap:18px; } .board-card { padding:13px; } .board-top { align-items:flex-start; flex-direction:column; gap:10px; } .legend { font-size:10px; } .chat-card { min-height:570px; height: 620px; } .howto { padding:0 14px 25px; flex-direction:column; } }
+    .modal-backdrop { position:fixed; inset:0; z-index:20; display:grid; place-items:center; padding:18px; background:rgba(37,36,35,.42); }
+    .modal-backdrop[hidden] { display:none; }
+    .modal { width:min(520px,100%); border:1px solid var(--line); border-radius:var(--radius); padding:22px; background:var(--white); box-shadow:var(--shadow); }
+    .modal h2 { margin:0; font-family:Georgia,serif; font-size:25px; font-weight:500; }
+    .modal p { margin:7px 0 16px; color:var(--muted); font-size:13px; line-height:1.45; }
+    .modal-actions { display:flex; gap:9px; flex-wrap:wrap; }
+    .modal-actions .button { border:1px solid var(--line); }
+    .modal-actions .button.primary { border-color:var(--ink); }
+    .mode-choice { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+    .mode-choice button { padding:14px; border:1px solid var(--line); border-radius:12px; background:var(--paper); color:var(--ink); text-align:left; }
+    .mode-choice button:hover { border-color:var(--blue); background:var(--blue-soft); }
+    .mode-choice strong { display:block; margin-bottom:4px; font-size:13px; }
+    .mode-choice span { display:block; color:var(--muted); font-size:11px; line-height:1.35; }
+    .custom-input { width:100%; min-height:112px; resize:vertical; border:1px solid var(--line); border-radius:10px; padding:11px; background:#fffdf9; color:var(--ink); font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; outline:none; }
+    .custom-input:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(78,107,131,.12); }
+    .custom-hint { margin:8px 0 16px; color:var(--muted); font-size:11px; }
+    .modal-error { min-height:17px; margin-top:8px; color:var(--red); font-size:12px; }
+    @media (max-width: 560px) { header { padding:0 16px; } .brand-sub, .header-actions .button:not(.primary) { display:none; } main { padding:22px 14px 28px; gap:18px; } .board-card { padding:13px; } .board-top { align-items:flex-start; flex-direction:column; gap:10px; } .legend { font-size:10px; } .chat-card { min-height:570px; height: 620px; } .howto { padding:0 14px 25px; flex-direction:column; } .mode-choice { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -117,7 +133,7 @@
     </header>
     <main>
       <section>
-        <div class="intro"><div><div class="eyebrow">Sessione · test coach</div><h1>Risolvi, non indovinare.</h1></div><div class="status" id="progressText">0 caselle inserite · il coach aspetta il tuo ragionamento</div></div>
+        <div class="intro"><div><div class="eyebrow" id="sessionMode">Sessione · puzzle personalizzato</div><h1>Risolvi, non indovinare.</h1></div><div class="status" id="progressText">0 caselle inserite · il coach aspetta il tuo ragionamento</div></div>
         <div class="board-card">
           <div class="board-top"><h2>La tua griglia</h2><div class="legend"><span><i class="dot given"></i>dato</span><span><i class="dot mine"></i>tuo</span><span><i class="dot coach"></i>coach</span></div></div>
           <div class="board-wrap"><div class="sudoku-grid" id="grid" aria-label="Griglia Sudoku"></div></div>
@@ -136,17 +152,33 @@
     <div class="howto"><span>Clicca una casella · <span class="kbd">1–9</span> inserisci · <span class="kbd">N</span> annota · <span class="kbd">Esc</span> deseleziona</span><span id="autosaveText">Stato salvato localmente nel browser</span></div>
   </div>
   <div class="toast" id="toast"></div>
+  <div class="modal-backdrop" id="newGameModal" hidden>
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="newGameTitle">
+      <h2 id="newGameTitle">Nuova partita</h2>
+      <p>Scegli come vuoi iniziare questa sessione.</p>
+      <div class="mode-choice">
+        <button id="generateMode" type="button"><strong>Genera un nuovo puzzle</strong><span>Una combinazione nuova, con soluzione unica e difficoltà media.</span></button>
+        <button id="customMode" type="button"><strong>Usa un puzzle personalizzato</strong><span>Incolla la tua griglia da 81 caratteri oppure 9 righe.</span></button>
+      </div>
+      <div id="customPanel" hidden>
+        <textarea id="customPuzzle" class="custom-input" spellcheck="false" placeholder="600000100\n000030000\n..."></textarea>
+        <div class="custom-hint">Usa cifre da 1 a 9 per i dati e 0 oppure . per le celle vuote.</div>
+        <div class="modal-error" id="customError"></div>
+        <div class="modal-actions"><button class="button" id="cancelCustom" type="button">Annulla</button><button class="button primary" id="loadCustom" type="button">Inizia partita</button></div>
+      </div>
+    </section>
+  </div>
   <script>
     (() => {
       const seed = '600000100000030000480609053000895000009040300000213000720301086000070000003000004';
       const PUBLIC_API_URL = 'https://paxil-kennedy-digital-perception.trycloudflare.com';
-      const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), notes: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), coachCells: new Set(), selected: null, mode: 'entry', coachMarks: false, messages: [] };
+      const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), modeName: 'custom', notes: Array.from({length:81}, () => new Set()), eliminated: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), coachCells: new Set(), selected: null, mode: 'entry', coachMarks: false, messages: [] };
       const $ = id => document.getElementById(id);
       const grid = $('grid'), pad = $('numberPad'), messages = $('messages');
       const idx = (r,c) => r*9+c, rc = i => [Math.floor(i/9), i%9];
       const peers = i => { const [r,c]=rc(i), out=new Set(); for(let k=0;k<9;k++){out.add(idx(r,k));out.add(idx(k,c));} const br=Math.floor(r/3)*3,bc=Math.floor(c/3)*3; for(let rr=br;rr<br+3;rr++)for(let cc=bc;cc<bc+3;cc++)out.add(idx(rr,cc)); out.delete(i); return out; };
       const unitCells = (type,n) => type==='row' ? Array.from({length:9},(_,c)=>idx(n,c)) : type==='col' ? Array.from({length:9},(_,r)=>idx(r,n)) : Array.from({length:9},(_,k)=>idx(Math.floor(n/3)*3+Math.floor(k/3),n%3*3+k%3));
-      const candidates = i => { if(state.puzzle[i]) return new Set(); const used=new Set([...peers(i)].map(p=>state.puzzle[p]).filter(Boolean)); return new Set([...Array(9)].map((_,n)=>n+1).filter(n=>!used.has(n))); };
+      const candidates = i => { if(state.puzzle[i]) return new Set(); const used=new Set([...peers(i)].map(p=>state.puzzle[p]).filter(Boolean)); return new Set([...Array(9)].map((_,n)=>n+1).filter(n=>!used.has(n)&&!state.eliminated[i].has(n))); };
       const cellLabel = i => { const [r,c]=rc(i); return `R${r+1}C${c+1}`; };
       function render(){
         grid.innerHTML='';
@@ -165,12 +197,13 @@
         pad.innerHTML=''; for(let n=1;n<=9;n++){const b=document.createElement('button');b.textContent=n;b.addEventListener('click',()=>enter(n));pad.append(b);} const e=document.createElement('button');e.textContent='×';e.className='erase';e.addEventListener('click',erase);pad.append(e);
         $('entryMode').classList.toggle('active',state.mode==='entry'); $('noteMode').classList.toggle('active',state.mode==='note'); $('coachMarks').classList.toggle('active',state.coachMarks);
         $('selectedLabel').innerHTML=state.selected===null?'Seleziona una casella':`<strong>${cellLabel(state.selected)}</strong> · ${state.givens[state.selected]?'dato':'modificabile'}${state.puzzle[state.selected]?' · '+state.puzzle[state.selected]:''}`;
+        $('sessionMode').textContent=`Sessione · ${state.modeName==='generated'?'nuovo puzzle':'puzzle personalizzato'}`;
         const count=state.puzzle.filter(Boolean).length-state.givens.filter(Boolean).length; $('progressText').textContent=`${count} caselle inserite · ${state.puzzle.filter(Boolean).length}/81 riempite`;
         renderMessages();
       }
       function select(i){ state.selected=i; render(); }
-      function enter(n){ if(state.selected===null || state.givens[state.selected]) return toast('Scegli una casella modificabile'); const i=state.selected; if(state.mode==='note'){ if(state.notes[i].has(n))state.notes[i].delete(n);else state.notes[i].add(n); } else { state.puzzle[i]=n; state.notes[i].clear(); state.coachNotes[i].clear(); state.coachCells.delete(i); addMessage('user',`Ho inserito ${n} in ${cellLabel(i)}.`); } saveLocal(); render(); }
-      function erase(){ if(state.selected===null||state.givens[state.selected])return; const i=state.selected; if(state.mode==='note'){state.notes[i].clear();}else{state.puzzle[i]=0;state.notes[i].clear();} state.coachNotes[i].clear(); state.coachCells.delete(i); saveLocal(); render(); }
+      function enter(n){ if(state.selected===null || state.givens[state.selected]) return toast('Scegli una casella modificabile'); const i=state.selected; if(state.mode==='note'){ if(state.notes[i].has(n))state.notes[i].delete(n);else state.notes[i].add(n); } else { state.puzzle[i]=n; state.notes[i].clear(); state.eliminated[i].clear(); state.coachNotes[i].clear(); state.coachCells.delete(i); addMessage('user',`Ho inserito ${n} in ${cellLabel(i)}.`); } saveLocal(); render(); }
+      function erase(){ if(state.selected===null||state.givens[state.selected])return; const i=state.selected; if(state.mode==='note'){state.notes[i].clear();}else{state.puzzle[i]=0;state.notes[i].clear();state.eliminated[i].clear();} state.coachNotes[i].clear(); state.coachCells.delete(i); saveLocal(); render(); }
       function setMode(m){state.mode=m;render();}
       function addMessage(who,text){state.messages.push({who,text}); if(state.messages.length>50)state.messages.shift(); saveLocal();}
       function renderMessages(){ messages.innerHTML=''; for(const m of state.messages){const wrap=document.createElement('div');wrap.className=`message ${m.who}`;if(m.who==='coach'){const d=document.createElement('div');d.className='coach-dot';d.textContent='◒';wrap.append(d);}const b=document.createElement('div');b.className='bubble';b.innerHTML=m.who==='coach'?`<span class="mini-label">Momo</span>${escapeHtml(m.text)}`:escapeHtml(m.text);wrap.append(b);messages.append(wrap);}messages.scrollTop=messages.scrollHeight;}
@@ -193,8 +226,9 @@
       function apiUrl(){return (localStorage.getItem('sudo-api-url')||PUBLIC_API_URL).replace(/\/$/,'');}
       function gridString(){return state.puzzle.join('');}
       function notesPayload(){return Object.fromEntries(state.notes.map((set,i)=>set.size?[cellLabel(i),[...set].sort()]:null).filter(Boolean));}
+      function eliminatedPayload(){return Object.fromEntries(state.eliminated.map((set,i)=>set.size?[cellLabel(i),[...set].sort()]:null).filter(Boolean));}
       function recentMessagesPayload(){return state.messages.filter(m=>m.text&&m.text!=='…').slice(-12).map(m=>({role:m.who==='coach'?'assistant':'user',content:m.text}));}
-      function currentGamePayload(text){return {message:text,grid:gridString(),givens:[...state.givens],notes:notesPayload(),selected_cell:state.selected===null?null:cellLabel(state.selected),recent_messages:recentMessagesPayload(),help_level:2};}
+      function currentGamePayload(text){return {message:text,grid:gridString(),givens:[...state.givens],notes:notesPayload(),eliminated_candidates:eliminatedPayload(),selected_cell:state.selected===null?null:cellLabel(state.selected),recent_messages:recentMessagesPayload(),help_level:2};}
       async function ask(text, kindOverride=null){
         addMessage('user',text); render();
         const url=apiUrl();
@@ -206,17 +240,31 @@
           if(!response.ok) throw new Error(data.detail||`HTTP ${response.status}`);
           state.messages.pop(); addMessage('coach',data.reply||'Non ho ricevuto una risposta dal coach.');
           for(const label of (data.highlight_cells||[])){const m=label.match(/^R([1-9])C([1-9])$/);if(m)state.coachCells.add((Number(m[1])-1)*9+Number(m[2])-1);}
+          for(const [label,digits] of Object.entries(data.suggested_eliminations||{})){const m=label.match(/^R([1-9])C([1-9])$/);if(!m)continue;const i=(Number(m[1])-1)*9+Number(m[2])-1;for(const digit of digits)state.eliminated[i].add(Number(digit));}
           state.coachMarks=true; saveLocal(); render();
         } catch(error) {
           state.messages.pop(); addMessage('coach',`Non riesco a raggiungere il coach vero: ${error.message}.`); render();
         }
       }
       function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
-      function saveLocal(){localStorage.setItem('sudo-state',JSON.stringify({puzzle:state.puzzle,givens:state.givens,notes:state.notes.map(s=>[...s]),coachNotes:state.coachNotes.map(s=>[...s]),coachCells:[...state.coachCells],messages:state.messages}));$('autosaveText').textContent='Salvato localmente · aggiornato ora';}
-      function loadLocal(){try{const raw=JSON.parse(localStorage.getItem('sudo-state'));if(!raw)return;state.puzzle=raw.puzzle;state.givens=raw.givens;state.notes=raw.notes.map(a=>new Set(a));state.coachNotes=raw.coachNotes.map(a=>new Set(a));state.coachCells=new Set(raw.coachCells||[]);state.messages=raw.messages||[];}catch(e){console.warn('local state ignored',e);}}
-      function reset(){state.puzzle=[...state.givens];state.notes=Array.from({length:81},()=>new Set());state.coachNotes=Array.from({length:81},()=>new Set());state.coachCells.clear();state.messages=[];addMessage('coach','Griglia resettata. Scegli una casella o chiedimi un tip quando vuoi.');saveLocal();render();}
-      function newPuzzle(){reset();addMessage('coach','Per ora ho caricato il puzzle di test. Il prossimo passo sarà importare foto o stringhe di puzzle.');render();}
+      function saveLocal(){localStorage.setItem('sudo-state',JSON.stringify({puzzle:state.puzzle,givens:state.givens,modeName:state.modeName,notes:state.notes.map(s=>[...s]),eliminated:state.eliminated.map(s=>[...s]),coachNotes:state.coachNotes.map(s=>[...s]),coachCells:[...state.coachCells],messages:state.messages}));$('autosaveText').textContent='Salvato localmente · aggiornato ora';}
+      function loadLocal(){try{const raw=JSON.parse(localStorage.getItem('sudo-state'));if(!raw)return;state.puzzle=raw.puzzle;state.givens=raw.givens;state.modeName=raw.modeName||'custom';state.notes=(raw.notes||Array.from({length:81},()=>[])).map(a=>new Set(a));state.eliminated=(raw.eliminated||Array.from({length:81},()=>[])).map(a=>new Set(a));state.coachNotes=(raw.coachNotes||Array.from({length:81},()=>[])).map(a=>new Set(a));state.coachCells=new Set(raw.coachCells||[]);state.messages=raw.messages||[];}catch(e){console.warn('local state ignored',e);}}
+      function clearSession(puzzle,modeName){state.puzzle=[...puzzle];state.givens=[...puzzle];state.modeName=modeName;state.notes=Array.from({length:81},()=>new Set());state.eliminated=Array.from({length:81},()=>new Set());state.coachNotes=Array.from({length:81},()=>new Set());state.coachCells.clear();state.selected=null;state.coachMarks=false;state.messages=[];addMessage('coach',modeName==='generated'?'Nuovo puzzle pronto. Parti da una deduzione alla volta.':'Puzzle personalizzato caricato. Controllo insieme a te ogni deduzione.');saveLocal();render();}
+      function reset(){clearSession(state.givens,state.modeName);}
+      function randomInt(max){return Math.floor(Math.random()*max);}
+      function shuffled(values){const a=[...values];for(let i=a.length-1;i>0;i--){const j=randomInt(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+      function solveCount(board,limit=2){let count=0;function search(){if(count>=limit)return;let best=-1,bestOptions=null;for(let i=0;i<81;i++){if(board[i])continue;const opts=[1,2,3,4,5,6,7,8,9].filter(n=>![...peers(i)].some(p=>board[p]===n));if(!opts.length)return;if(!bestOptions||opts.length<bestOptions.length){best=i;bestOptions=opts;if(opts.length===1)break;}}if(best===-1){count++;return;}for(const n of bestOptions){board[best]=n;search();board[best]=0;if(count>=limit)return;}}search();return count;}
+      function makeSolvedGrid(){const board=Array(81).fill(0);function fill(){let best=-1,options=null;for(let i=0;i<81;i++){if(board[i])continue;const opts=shuffled([1,2,3,4,5,6,7,8,9].filter(n=>![...peers(i)].some(p=>board[p]===n)));if(!options||opts.length<options.length){best=i;options=opts;}}if(best===-1)return true;for(const n of options){board[best]=n;if(fill())return true;board[best]=0;}return false;}fill();return board;}
+      function generatePuzzle(){for(let attempt=0;attempt<8;attempt++){const solution=makeSolvedGrid();const puzzle=[...solution];for(const i of shuffled([...Array(81).keys()])){const old=puzzle[i];puzzle[i]=0;if(solveCount([...puzzle],2)!==1)puzzle[i]=old;}if(puzzle.filter(Boolean).length<=40)return puzzle;}return [...seed].map(Number);}
+      function normalisePuzzle(text){const input=String(text||'');const compact=input.replace(/[\s]/g,'');if(/[^0-9.·_-]/.test(compact))return {error:'Usa solo cifre da 1 a 9 e 0 oppure . per le celle vuote.'};const raw=compact.replace(/[.·_-]/g,'0');if(raw.length!==81)return {error:`Servono 81 celle; ne hai inserite ${raw.length}.`};const puzzle=[...raw].map(Number);for(let i=0;i<81;i++){if(!puzzle[i])continue;if([...peers(i)].some(p=>p<i&&puzzle[p]===puzzle[i]))return {error:`Il ${puzzle[i]} è duplicato in ${cellLabel(i)}.`};}if(solveCount([...puzzle],2)!==1)return {error:'Il puzzle deve avere una soluzione unica.'};return {puzzle};}
+      function openNewGame(){ $('newGameModal').hidden=false; $('customPanel').hidden=true; $('customError').textContent=''; }
+      function closeNewGame(){ $('newGameModal').hidden=true; }
+      function newPuzzle(){openNewGame();}
+      function startGenerated(){closeNewGame();clearSession(generatePuzzle(),'generated');}
+      function showCustom(){ $('customPanel').hidden=false; $('customPuzzle').value=state.modeName==='custom'?state.givens.map(n=>n||0).join(''):''; $('customPuzzle').focus(); }
+      function startCustom(){const result=normalisePuzzle($('customPuzzle').value);if(result.error){$('customError').textContent=result.error;return;}closeNewGame();clearSession(result.puzzle,'custom');}
       $('entryMode').onclick=()=>setMode('entry');$('noteMode').onclick=()=>setMode('note');$('coachMarks').onclick=()=>{state.coachMarks=!state.coachMarks;render();};$('resetPuzzle').onclick=reset;$('newPuzzle').onclick=newPuzzle;$('savePuzzle').onclick=()=>{saveLocal();toast('Stato salvato nel browser');};
+      $('generateMode').onclick=startGenerated;$('customMode').onclick=showCustom;$('cancelCustom').onclick=closeNewGame;$('loadCustom').onclick=startCustom;
       document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const k=b.dataset.action;const prompts={tip:'Dammi un tip.',technique:'Che tecnica devo usare?',why:'Perché?',check:'Controlla il mio passo.'};ask(prompts[k],k);});
       $('chatForm').addEventListener('submit',e=>{e.preventDefault();const v=$('chatInput').value.trim();if(v){$('chatInput').value='';ask(v);}});
       document.addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='9')enter(Number(e.key));if(e.key.toLowerCase()==='n')setMode('note');if(e.key==='Escape'){state.selected=null;render();}if(e.key==='Backspace'||e.key==='Delete')erase();});

@@ -22,6 +22,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
+from sudoku_engine import HumanSudokuEngine
+
 ALL = set(range(1, 10))
 GRID_RE = re.compile(r"^[0-9.·_\-\s]{81}$")
 
@@ -62,6 +64,7 @@ def units() -> list[tuple[str, int, list[int]]]:
     return result
 
 UNITS = units()
+HUMAN_ENGINE = HumanSudokuEngine(assume_unique=False)
 PEERS: list[set[int]] = []
 for i in range(81):
     r, c = divmod(i, 9)
@@ -82,12 +85,20 @@ def validate_grid(grid: list[int]) -> list[str]:
     return errors
 
 
-def candidate_map(grid: list[int]) -> dict[int, set[int]]:
+def candidate_map(grid: list[int], eliminated: Any = None) -> dict[int, set[int]]:
     result: dict[int, set[int]] = {}
+    removed: dict[int, set[int]] = {}
+    if isinstance(eliminated, dict):
+        for label, digits in eliminated.items():
+            match = re.fullmatch(r"R([1-9])C([1-9])", str(label))
+            if not match or not isinstance(digits, (list, tuple, set)):
+                continue
+            i = (int(match.group(1)) - 1) * 9 + int(match.group(2)) - 1
+            removed[i] = {int(d) for d in digits if isinstance(d, int) and 1 <= d <= 9}
     for i, value in enumerate(grid):
         if not value:
             used = {grid[p] for p in PEERS[i] if grid[p]}
-            result[i] = ALL - used
+            result[i] = (ALL - used) - removed.get(i, set())
     return result
 
 
@@ -95,10 +106,10 @@ def box_index(i: int) -> int:
     return (i // 9 // 3) * 3 + (i % 9 // 3)
 
 
-def note_facts(grid: list[int], user_notes: Any) -> list[dict[str, Any]]:
+def note_facts(grid: list[int], user_notes: Any, eliminated: Any = None) -> list[dict[str, Any]]:
     if not isinstance(user_notes, dict):
         return []
-    candidates = candidate_map(grid)
+    candidates = candidate_map(grid, eliminated)
     result: list[dict[str, Any]] = []
     for label, raw in user_notes.items():
         match = re.fullmatch(r"R([1-9])C([1-9])", str(label))
@@ -164,9 +175,10 @@ def select_facts(all_facts: list[dict[str, Any]], message: str) -> list[dict[str
     elif focus == "check":
         selected = all_facts[:12]
     else:
-        selected = [f for f in all_facts if f["technique"] in advanced][:8]
-        if not selected:
-            selected = all_facts[:4]
+        # A generic "tip" follows the teaching order. Do not jump to a pair
+        # or an X-Wing while a verified single is available; advanced facts
+        # are selected only when the player asks for an advanced technique.
+        selected = all_facts[:4]
     advanced_order = {
         "X-Wing": 0,
         "hidden triple": 1,
@@ -178,7 +190,9 @@ def select_facts(all_facts: list[dict[str, Any]], message: str) -> list[dict[str
     }
     if focus in {"advanced_related", "advanced_any"}:
         selected.sort(key=lambda fact: advanced_order.get(fact["technique"], 99))
-    return selected[:8]
+    # One authoritative fact per turn. Passing a menu of unrelated facts to
+    # the LLM is what made it blend a hidden pair with a locked candidate.
+    return selected[:1]
 
 
 def fact_cells(fact: dict[str, Any]) -> list[str]:
@@ -195,8 +209,64 @@ def fact_cells(fact: dict[str, Any]) -> list[str]:
     return cells
 
 
-def facts(grid: list[int], user_notes: Any = None) -> list[dict[str, Any]]:
-    candidates = candidate_map(grid)
+def fact_guidance(fact: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not fact:
+        return None
+    guidance = {"technique": fact.get("technique"), "kind": fact.get("kind")}
+    for key in ("cell", "digit", "unit", "cells", "digits", "eliminations", "source", "target"):
+        if fact.get(key):
+            guidance[key] = fact[key]
+    return guidance
+
+
+def fact_elimination_map(fact: dict[str, Any]) -> dict[str, list[int]]:
+    result: dict[str, list[int]] = {}
+    default_digit = fact.get("digit")
+    for item in fact.get("eliminations", []):
+        if isinstance(item, dict):
+            label = item.get("cell")
+            digits = item.get("digits", [])
+        else:
+            label = item
+            digits = [default_digit] if default_digit else []
+        if not re.fullmatch(r"R[1-9]C[1-9]", str(label)):
+            continue
+        valid_digits = sorted({int(d) for d in digits if isinstance(d, int) and 1 <= d <= 9})
+        if valid_digits:
+            result[str(label)] = valid_digits
+    return result
+
+
+def engine_facts(grid: list[int], eliminated_candidates: Any = None) -> list[dict[str, Any]]:
+    """Convert verified Dedoku deductions to the backend fact contract."""
+    puzzle = "".join(str(value) for value in grid)
+    names = {
+        "Pointing Candidates": "locked candidates / pointing",
+        "Claiming Candidates": "locked candidates / claiming",
+    }
+    converted: list[dict[str, Any]] = []
+    for step in HUMAN_ENGINE.available_steps(puzzle, eliminated_candidates=eliminated_candidates):
+        fact: dict[str, Any] = {
+            "technique": names.get(step.technique, step.technique.lower()),
+            "description": step.description,
+            "kind": "elimination" if step.eliminations else "placement",
+        }
+        if step.placements:
+            fact["cell"] = step.placements[0]["cell"]
+            fact["digit"] = step.placements[0]["digit"]
+        if step.eliminations:
+            fact["eliminations"] = [
+                {"cell": item["cell"], "digits": [item["digit"]]}
+                for item in step.eliminations
+            ]
+            fact["cells"] = [item["cell"] for item in step.eliminations]
+            fact["digits"] = sorted({item["digit"] for item in step.eliminations})
+        converted.append(fact)
+    return converted
+
+
+def facts(grid: list[int], user_notes: Any = None, eliminated_candidates: Any = None) -> list[dict[str, Any]]:
+    candidates = candidate_map(grid, eliminated_candidates)
     found: list[dict[str, Any]] = []
     seen: set[tuple[Any, ...]] = set()
 
@@ -273,7 +343,11 @@ def facts(grid: list[int], user_notes: Any = None) -> list[dict[str, Any]]:
             for digits in combinations(range(1, 10), size):
                 positions_by_digit = {digit: {i for i in indexes if i in candidates and digit in candidates[i]} for digit in digits}
                 positions = set().union(*positions_by_digit.values())
-                if len(positions) != size or not positions or any(not positions_by_digit[digit] for digit in digits):
+                # A hidden pair requires both digits to occupy exactly the
+                # same two cells. Without this equality a hidden single was
+                # being mislabeled as a hidden pair (e.g. one digit in only
+                # one cell and the other in two).
+                if len(positions) != size or not positions or any(positions_by_digit[digit] != positions for digit in digits):
                     continue
                 eliminated = [i for i in positions if candidates[i] - set(digits)]
                 if eliminated:
@@ -306,7 +380,7 @@ def facts(grid: list[int], user_notes: Any = None) -> list[dict[str, Any]]:
             if eliminated:
                 found.append({"technique": "X-Wing", "digit": digit, "columns": [f"colonna {c1 + 1}", f"colonna {c2 + 1}"], "rows": [r + 1 for r in rows], "eliminations": eliminated, "kind": "elimination"})
 
-    found.extend(note_facts(grid, user_notes))
+    found.extend(note_facts(grid, user_notes, eliminated_candidates))
 
     deduped: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
@@ -323,11 +397,11 @@ def facts(grid: list[int], user_notes: Any = None) -> list[dict[str, Any]]:
     return found[:80]
 
 
-def build_evidence(grid: list[int], user_notes: Any) -> dict[str, Any]:
+def build_evidence(grid: list[int], user_notes: Any, eliminated_candidates: Any = None) -> dict[str, Any]:
     errors = validate_grid(grid)
     if errors:
         return {"valid": False, "errors": errors, "facts": []}
-    cmap = candidate_map(grid)
+    cmap = candidate_map(grid, eliminated_candidates)
     compact_candidates = {cell_label(i): "".join(map(str, sorted(nums))) for i, nums in cmap.items()}
     present = sorted(set(n for n in grid if n))
     unit_missing: dict[str, list[int]] = {}
@@ -336,8 +410,9 @@ def build_evidence(grid: list[int], user_notes: Any) -> dict[str, Any]:
     return {
         "valid": True,
         "errors": [],
-        "facts": facts(grid, user_notes),
+        "facts": engine_facts(grid, eliminated_candidates) + note_facts(grid, user_notes, eliminated_candidates),
         "candidates": compact_candidates,
+        "eliminated_candidates": eliminated_candidates or {},
         "numbers_present": present,
         "numbers_missing_from_grid": sorted(ALL - set(present)),
         "numbers_missing_by_unit": unit_missing,
@@ -353,6 +428,7 @@ class ChatRequest(BaseModel):
     givens: Any = None
     selected_cell: str | None = Field(default=None, max_length=6)
     recent_messages: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    eliminated_candidates: dict[str, list[int]] = Field(default_factory=dict)
     help_level: int = Field(default=2, ge=0, le=7)
 
     @field_validator("message")
@@ -399,6 +475,7 @@ def call_hermes(message: str, evidence: dict[str, Any], help_level: int) -> str:
         "selected_cell": evidence.get("selected_cell"),
         "notes": evidence.get("notes", {}),
         "candidates_for_empty_cells": evidence.get("candidates", {}),
+        "eliminated_candidates": evidence.get("eliminated_candidates", {}),
         "numbers_present": evidence.get("numbers_present", []),
         "numbers_missing_from_grid": evidence.get("numbers_missing_from_grid", []),
         "numbers_missing_by_unit": evidence.get("numbers_missing_by_unit", {}),
@@ -444,7 +521,7 @@ async def chat(payload: ChatRequest):
         grid = normalize_grid(payload.grid)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    evidence = build_evidence(grid, payload.notes)
+    evidence = build_evidence(grid, payload.notes, payload.eliminated_candidates)
     evidence["grid_rows"] = [grid[r * 9:(r + 1) * 9] for r in range(9)]
     if isinstance(payload.givens, list) and len(payload.givens) == 81:
         givens = [int(x) for x in payload.givens]
@@ -468,7 +545,8 @@ async def chat(payload: ChatRequest):
     if selected_facts:
         first = selected_facts[0]
         highlight.extend(fact_cells(first))
-    return {"reply": reply, "technique": selected_facts[0]["technique"] if selected_facts else None, "highlight_cells": highlight, "evidence": {"valid": True, "facts": selected_facts}}
+    suggested_eliminations = fact_elimination_map(first) if selected_facts and first.get("kind") == "elimination" else {}
+    return {"reply": reply, "technique": selected_facts[0]["technique"] if selected_facts else None, "highlight_cells": highlight, "suggested_eliminations": suggested_eliminations, "evidence": {"valid": True, "facts": selected_facts}}
 
 
 @app.get("/")
