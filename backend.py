@@ -273,7 +273,7 @@ def facts(grid: list[int], user_notes: Any = None) -> list[dict[str, Any]]:
             for digits in combinations(range(1, 10), size):
                 positions_by_digit = {digit: {i for i in indexes if i in candidates and digit in candidates[i]} for digit in digits}
                 positions = set().union(*positions_by_digit.values())
-                if len(positions) != size or not positions or any(len(positions_by_digit[digit]) < 2 for digit in digits):
+                if len(positions) != size or not positions or any(not positions_by_digit[digit] for digit in digits):
                     continue
                 eliminated = [i for i in positions if candidates[i] - set(digits)]
                 if eliminated:

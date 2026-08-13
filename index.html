@@ -140,7 +140,7 @@
     (() => {
       const seed = '600000100000030000480609053000895000009040300000213000720301086000070000003000004';
       const PUBLIC_API_URL = 'https://paxil-kennedy-digital-perception.trycloudflare.com';
-      const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), notes: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), selected: null, mode: 'entry', coachMarks: false, messages: [] };
+      const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), notes: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), coachCells: new Set(), selected: null, mode: 'entry', coachMarks: false, messages: [] };
       const $ = id => document.getElementById(id);
       const grid = $('grid'), pad = $('numberPad'), messages = $('messages');
       const idx = (r,c) => r*9+c, rc = i => [Math.floor(i/9), i%9];
@@ -157,7 +157,7 @@
           if(state.selected===i) cell.classList.add('selected');
           if(state.selected!==null && peers(state.selected).has(i)) cell.classList.add('related');
           if(selectedVal && state.puzzle[i]===selectedVal) cell.classList.add('same-number');
-          if(state.coachMarks && state.coachNotes[i].size) cell.classList.add('coach-mark');
+          if(state.coachMarks && (state.coachNotes[i].size || state.coachCells.has(i))) cell.classList.add('coach-mark');
           if(state.puzzle[i]) { const span=document.createElement('span'); span.className='value'; span.textContent=state.puzzle[i]; cell.append(span); }
           else { const ns=document.createElement('div'); ns.className='notes'; for(let n=1;n<=9;n++){const s=document.createElement('span'); s.textContent=state.notes[i].has(n)?n:''; ns.append(s);} cell.append(ns); }
           cell.addEventListener('click',()=>select(i)); grid.append(cell);
@@ -169,8 +169,8 @@
         renderMessages();
       }
       function select(i){ state.selected=i; render(); }
-      function enter(n){ if(state.selected===null || state.givens[state.selected]) return toast('Scegli una casella modificabile'); const i=state.selected; if(state.mode==='note'){ if(state.notes[i].has(n))state.notes[i].delete(n);else state.notes[i].add(n); } else { state.puzzle[i]=n; state.notes[i].clear(); state.coachNotes[i].clear(); addMessage('user',`Ho inserito ${n} in ${cellLabel(i)}.`); } saveLocal(); render(); }
-      function erase(){ if(state.selected===null||state.givens[state.selected])return; const i=state.selected; state.puzzle[i]=0; state.notes[i].clear(); state.coachNotes[i].clear(); saveLocal(); render(); }
+      function enter(n){ if(state.selected===null || state.givens[state.selected]) return toast('Scegli una casella modificabile'); const i=state.selected; if(state.mode==='note'){ if(state.notes[i].has(n))state.notes[i].delete(n);else state.notes[i].add(n); } else { state.puzzle[i]=n; state.notes[i].clear(); state.coachNotes[i].clear(); state.coachCells.delete(i); addMessage('user',`Ho inserito ${n} in ${cellLabel(i)}.`); } saveLocal(); render(); }
+      function erase(){ if(state.selected===null||state.givens[state.selected])return; const i=state.selected; if(state.mode==='note'){state.notes[i].clear();}else{state.puzzle[i]=0;state.notes[i].clear();} state.coachNotes[i].clear(); state.coachCells.delete(i); saveLocal(); render(); }
       function setMode(m){state.mode=m;render();}
       function addMessage(who,text){state.messages.push({who,text}); if(state.messages.length>50)state.messages.shift(); saveLocal();}
       function renderMessages(){ messages.innerHTML=''; for(const m of state.messages){const wrap=document.createElement('div');wrap.className=`message ${m.who}`;if(m.who==='coach'){const d=document.createElement('div');d.className='coach-dot';d.textContent='◒';wrap.append(d);}const b=document.createElement('div');b.className='bubble';b.innerHTML=m.who==='coach'?`<span class="mini-label">Momo</span>${escapeHtml(m.text)}`:escapeHtml(m.text);wrap.append(b);messages.append(wrap);}messages.scrollTop=messages.scrollHeight;}
@@ -205,16 +205,16 @@
           const data=await response.json();
           if(!response.ok) throw new Error(data.detail||`HTTP ${response.status}`);
           state.messages.pop(); addMessage('coach',data.reply||'Non ho ricevuto una risposta dal coach.');
-          for(const label of (data.highlight_cells||[])){const m=label.match(/^R([1-9])C([1-9])$/);if(m)state.coachNotes[(Number(m[1])-1)*9+Number(m[2])-1].add(...(data.evidence?.facts?.[0]?.digit?[data.evidence.facts[0].digit]:[]));}
+          for(const label of (data.highlight_cells||[])){const m=label.match(/^R([1-9])C([1-9])$/);if(m)state.coachCells.add((Number(m[1])-1)*9+Number(m[2])-1);}
           state.coachMarks=true; saveLocal(); render();
         } catch(error) {
           state.messages.pop(); addMessage('coach',`Non riesco a raggiungere il coach vero: ${error.message}.`); render();
         }
       }
       function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
-      function saveLocal(){localStorage.setItem('sudo-state',JSON.stringify({puzzle:state.puzzle,givens:state.givens,notes:state.notes.map(s=>[...s]),coachNotes:state.coachNotes.map(s=>[...s]),messages:state.messages}));$('autosaveText').textContent='Salvato localmente · aggiornato ora';}
-      function loadLocal(){try{const raw=JSON.parse(localStorage.getItem('sudo-state'));if(!raw)return;state.puzzle=raw.puzzle;state.givens=raw.givens;state.notes=raw.notes.map(a=>new Set(a));state.coachNotes=raw.coachNotes.map(a=>new Set(a));state.messages=raw.messages||[];}catch(e){console.warn('local state ignored',e);}}
-      function reset(){state.puzzle=[...state.givens];state.notes=Array.from({length:81},()=>new Set());state.coachNotes=Array.from({length:81},()=>new Set());state.messages=[];addMessage('coach','Griglia resettata. Scegli una casella o chiedimi un tip quando vuoi.');saveLocal();render();}
+      function saveLocal(){localStorage.setItem('sudo-state',JSON.stringify({puzzle:state.puzzle,givens:state.givens,notes:state.notes.map(s=>[...s]),coachNotes:state.coachNotes.map(s=>[...s]),coachCells:[...state.coachCells],messages:state.messages}));$('autosaveText').textContent='Salvato localmente · aggiornato ora';}
+      function loadLocal(){try{const raw=JSON.parse(localStorage.getItem('sudo-state'));if(!raw)return;state.puzzle=raw.puzzle;state.givens=raw.givens;state.notes=raw.notes.map(a=>new Set(a));state.coachNotes=raw.coachNotes.map(a=>new Set(a));state.coachCells=new Set(raw.coachCells||[]);state.messages=raw.messages||[];}catch(e){console.warn('local state ignored',e);}}
+      function reset(){state.puzzle=[...state.givens];state.notes=Array.from({length:81},()=>new Set());state.coachNotes=Array.from({length:81},()=>new Set());state.coachCells.clear();state.messages=[];addMessage('coach','Griglia resettata. Scegli una casella o chiedimi un tip quando vuoi.');saveLocal();render();}
       function newPuzzle(){reset();addMessage('coach','Per ora ho caricato il puzzle di test. Il prossimo passo sarà importare foto o stringhe di puzzle.');render();}
       $('entryMode').onclick=()=>setMode('entry');$('noteMode').onclick=()=>setMode('note');$('coachMarks').onclick=()=>{state.coachMarks=!state.coachMarks;render();};$('resetPuzzle').onclick=reset;$('newPuzzle').onclick=newPuzzle;$('savePuzzle').onclick=()=>{saveLocal();toast('Stato salvato nel browser');};
       document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const k=b.dataset.action;const prompts={tip:'Dammi un tip.',technique:'Che tecnica devo usare?',why:'Perché?',check:'Controlla il mio passo.'};ask(prompts[k],k);});
