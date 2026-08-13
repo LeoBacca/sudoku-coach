@@ -34,6 +34,12 @@
     .brand-name { font-weight: 800; letter-spacing: -.03em; font-size: 19px; }
     .brand-sub { color: var(--muted); font-size: 12px; margin-left: 8px; }
     .header-actions { display:flex; align-items:center; gap: 9px; }
+    .game-menu { position:relative; }
+    .game-menu-panel { position:absolute; top:calc(100% + 8px); left:0; z-index:12; display:none; width:230px; padding:7px; border:1px solid var(--line); border-radius:12px; background:var(--white); box-shadow:var(--shadow); }
+    .game-menu-panel.open { display:grid; gap:4px; }
+    .game-menu-panel button { width:100%; padding:10px 11px; border-radius:8px; background:transparent; color:var(--ink); text-align:left; font-size:12px; font-weight:750; }
+    .game-menu-panel button:hover { background:var(--blue-soft); }
+    .game-menu-panel button span { display:block; margin-top:2px; color:var(--muted); font-size:10px; font-weight:500; }
     .button { padding: 10px 14px; border-radius: 10px; background: transparent; color: var(--ink); font-size: 13px; font-weight: 700; }
     .button:hover { background: var(--paper-deep); }
     .button.primary { background: var(--ink); color: var(--white); }
@@ -129,7 +135,7 @@
   <div class="app-shell">
     <header>
       <div class="brand"><div class="brand-mark">9</div><div><span class="brand-name">Sudo</span><span class="brand-sub">sudoku, con un coach accanto</span></div></div>
-      <div class="header-actions"><button class="button" id="newPuzzle">Nuovo puzzle</button><button class="button" id="resetPuzzle">Reset</button><button class="button primary" id="savePuzzle">Salva stato</button></div>
+      <div class="header-actions"><div class="game-menu"><button class="button primary" id="newPuzzle" aria-haspopup="true" aria-expanded="false">Nuova partita ▾</button><div class="game-menu-panel" id="gameMenuPanel"><button id="generateMenu" type="button">Nuovo Sudoku<span>Genera una combinazione nuova</span></button><button id="customMenu" type="button">Puzzle personalizzato<span>Inserisci la tua combinazione</span></button></div></div><button class="button" id="resetPuzzle">Reset</button><button class="button" id="savePuzzle">Salva stato</button></div>
     </header>
     <main>
       <section>
@@ -257,14 +263,17 @@
       function makeSolvedGrid(){const board=Array(81).fill(0);function fill(){let best=-1,options=null;for(let i=0;i<81;i++){if(board[i])continue;const opts=shuffled([1,2,3,4,5,6,7,8,9].filter(n=>![...peers(i)].some(p=>board[p]===n)));if(!options||opts.length<options.length){best=i;options=opts;}}if(best===-1)return true;for(const n of options){board[best]=n;if(fill())return true;board[best]=0;}return false;}fill();return board;}
       function generatePuzzle(){for(let attempt=0;attempt<8;attempt++){const solution=makeSolvedGrid();const puzzle=[...solution];for(const i of shuffled([...Array(81).keys()])){const old=puzzle[i];puzzle[i]=0;if(solveCount([...puzzle],2)!==1)puzzle[i]=old;}if(puzzle.filter(Boolean).length<=40)return puzzle;}return [...seed].map(Number);}
       function normalisePuzzle(text){const input=String(text||'');const compact=input.replace(/[\s]/g,'');if(/[^0-9.·_-]/.test(compact))return {error:'Usa solo cifre da 1 a 9 e 0 oppure . per le celle vuote.'};const raw=compact.replace(/[.·_-]/g,'0');if(raw.length!==81)return {error:`Servono 81 celle; ne hai inserite ${raw.length}.`};const puzzle=[...raw].map(Number);for(let i=0;i<81;i++){if(!puzzle[i])continue;if([...peers(i)].some(p=>p<i&&puzzle[p]===puzzle[i]))return {error:`Il ${puzzle[i]} è duplicato in ${cellLabel(i)}.`};}if(solveCount([...puzzle],2)!==1)return {error:'Il puzzle deve avere una soluzione unica.'};return {puzzle};}
-      function openNewGame(){ $('newGameModal').hidden=false; $('customPanel').hidden=true; $('customError').textContent=''; }
+      function openNewGame(){ $('newGameModal').hidden=false; $('customPanel').hidden=true; $('customError').textContent=''; closeGameMenu(); }
       function closeNewGame(){ $('newGameModal').hidden=true; }
-      function newPuzzle(){openNewGame();}
-      function startGenerated(){closeNewGame();clearSession(generatePuzzle(),'generated');}
-      function showCustom(){ $('customPanel').hidden=false; $('customPuzzle').value=state.modeName==='custom'?state.givens.map(n=>n||0).join(''):''; $('customPuzzle').focus(); }
-      function startCustom(){const result=normalisePuzzle($('customPuzzle').value);if(result.error){$('customError').textContent=result.error;return;}closeNewGame();clearSession(result.puzzle,'custom');}
+      function closeGameMenu(){ $('gameMenuPanel').classList.remove('open'); $('newPuzzle').setAttribute('aria-expanded','false'); }
+      function toggleGameMenu(){const panel=$('gameMenuPanel');const open=panel.classList.toggle('open');$('newPuzzle').setAttribute('aria-expanded',String(open));}
+      function newPuzzle(){toggleGameMenu();}
+      function startGenerated(){closeNewGame();closeGameMenu();clearSession(generatePuzzle(),'generated');}
+      function startCustom(){const result=normalisePuzzle($('customPuzzle').value);if(result.error){$('customError').textContent=result.error;return;}closeNewGame();closeGameMenu();clearSession(result.puzzle,'custom');}
+      function showCustom(){openNewGame(); $('customPanel').hidden=false; $('customPuzzle').value=state.modeName==='custom'?state.givens.map(n=>n||0).join(''):''; $('customPuzzle').focus();}
       $('entryMode').onclick=()=>setMode('entry');$('noteMode').onclick=()=>setMode('note');$('coachMarks').onclick=()=>{state.coachMarks=!state.coachMarks;render();};$('resetPuzzle').onclick=reset;$('newPuzzle').onclick=newPuzzle;$('savePuzzle').onclick=()=>{saveLocal();toast('Stato salvato nel browser');};
-      $('generateMode').onclick=startGenerated;$('customMode').onclick=showCustom;$('cancelCustom').onclick=closeNewGame;$('loadCustom').onclick=startCustom;
+      $('generateMode').onclick=startGenerated;$('customMode').onclick=showCustom;$('generateMenu').onclick=startGenerated;$('customMenu').onclick=showCustom;$('cancelCustom').onclick=closeNewGame;$('loadCustom').onclick=startCustom;
+      document.addEventListener('click',e=>{if(!e.target.closest('.game-menu'))closeGameMenu();});
       document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const k=b.dataset.action;const prompts={tip:'Dammi un tip.',technique:'Che tecnica devo usare?',why:'Perché?',check:'Controlla il mio passo.'};ask(prompts[k],k);});
       $('chatForm').addEventListener('submit',e=>{e.preventDefault();const v=$('chatInput').value.trim();if(v){$('chatInput').value='';ask(v);}});
       document.addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='9')enter(Number(e.key));if(e.key.toLowerCase()==='n')setMode('note');if(e.key==='Escape'){state.selected=null;render();}if(e.key==='Backspace'||e.key==='Delete')erase();});
