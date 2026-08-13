@@ -153,6 +153,33 @@ def requested_focus(message: str) -> str:
     return "general"
 
 
+def unit_phrase(unit: str | None) -> str:
+    """Turn an engine unit label into a player-facing location."""
+    match = re.fullmatch(r"(row|col|box) (\d+)", str(unit or ""))
+    if not match:
+        return "questa unità"
+    kind, raw_number = match.groups()
+    number = int(raw_number)
+    if kind == "row":
+        return f"riga {number}"
+    if kind == "col":
+        return f"colonna {number}"
+    positions = ["in alto a sinistra", "in alto al centro", "in alto a destra", "al centro a sinistra", "centrale", "al centro a destra", "in basso a sinistra", "in basso al centro", "in basso a destra"]
+    return f"box {positions[number - 1]}" if 1 <= number <= 9 else f"box {number}"
+
+
+def coaching_direction(fact: dict[str, Any] | None, message: str) -> str | None:
+    """Give the LLM a strict direction for a low-help generic tip."""
+    if not fact or requested_focus(message) != "general":
+        return None
+    technique = fact.get("technique")
+    if technique == "hidden single":
+        return f"TIP FORMATO OBBLIGATORIO: indica solo l'unità {unit_phrase(fact.get('unit'))} e dì che lì c'è un hidden single. Non nominare la cella e non nominare il digit verificato."
+    if technique == "naked single":
+        return f"TIP FORMATO OBBLIGATORIO: inizia esattamente con 'Guarda {fact.get('cell')}'. Dì che quella casella ha un solo candidato e chiedi di ricavare il numero dai vincoli. Non nominare il digit verificato e non sostituire la casella con un box o una cifra."
+    return "Per questo tip indica prima l'area o la relazione da osservare. Non iniziare da una cifra isolata."
+
+
 def select_facts(all_facts: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
     focus = requested_focus(message)
     advanced = {"locked candidates / pointing", "locked candidates / claiming", "naked pair", "hidden pair", "naked triple", "hidden triple", "X-Wing"}
@@ -467,7 +494,9 @@ def call_hermes(message: str, evidence: dict[str, Any], help_level: int) -> str:
     api_key = os.getenv("API_SERVER_KEY", "")
     if not api_key:
         raise RuntimeError("API_SERVER_KEY is not configured for the backend")
-    facts_json = json.dumps(select_facts(evidence.get("facts", []), message), ensure_ascii=False)
+    selected_fact = select_facts(evidence.get("facts", []), message)[:1]
+    facts_json = json.dumps(selected_fact, ensure_ascii=False)
+    direction = coaching_direction(selected_fact[0] if selected_fact else None, message) or "Nessuna direzione speciale: rispondi usando il fatto verificato e il livello di aiuto richiesto."
     state_json = json.dumps({
         "grid_rows": evidence.get("grid_rows"),
         "givens_rows": evidence.get("givens_rows"),
@@ -493,6 +522,8 @@ STATO COMPLETO E AGGIORNATO DELLA PARTITA:
 Usa questo stato per capire riferimenti come "qui", "quel numero", "questa riga", "la mia annotazione" o "quello che ho appena inserito". I dati iniziali e i numeri inseriti dall'utente sono distinti. Le annotazioni sono appunti dell'utente: non sono numeri piazzati e non sono automaticamente corrette. I candidati nel blocco sono ricalcolati dal motore in base alla griglia corrente.
 FATTI VERIFICATI:
 {facts_json}
+DIREZIONE OBBLIGATORIA PER QUESTA RISPOSTA:
+{direction}
 """
     payload = {"model": "hermes-agent", "messages": [{"role": "system", "content": system}, {"role": "user", "content": message}], "temperature": 0.35, "max_tokens": 300}
     request = urllib.request.Request(api_url, data=json.dumps(payload).encode(), headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}, method="POST")

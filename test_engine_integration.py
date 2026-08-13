@@ -26,6 +26,18 @@ class EngineIntegrationTests(unittest.TestCase):
         self.assertEqual(evidence["facts"][0]["cell"], "R3C5")
         self.assertEqual(evidence["facts"][0]["digit"], 2)
 
+    def test_generic_tip_direction_hides_digit_and_points_to_cell(self):
+        evidence = backend.build_evidence([int(char) for char in PUZZLE], {})
+        fact = backend.select_facts(evidence["facts"], "Dammi un tip")[0]
+
+        self.assertEqual(fact["technique"], "naked single")
+        direction = backend.coaching_direction(fact, "Dammi un tip")
+        self.assertIn("R3C5", direction)
+        self.assertIn("Non nominare il digit", direction)
+
+    def test_unit_phrase_names_box_position(self):
+        self.assertEqual(backend.unit_phrase("box 8"), "box in basso al centro")
+
 
 if __name__ == "__main__":
     unittest.main()
