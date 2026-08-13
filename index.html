@@ -159,7 +159,7 @@
           if(selectedVal && state.puzzle[i]===selectedVal) cell.classList.add('same-number');
           if(state.coachMarks && state.coachNotes[i].size) cell.classList.add('coach-mark');
           if(state.puzzle[i]) { const span=document.createElement('span'); span.className='value'; span.textContent=state.puzzle[i]; cell.append(span); }
-          else { const ns=document.createElement('div'); ns.className='notes'; for(let n=1;n<=9;n++){const s=document.createElement('span'); s.textContent=state.notes[i].has(n)?n:''; if(state.coachNotes[i].has(n)) {s.textContent=n;s.classList.add('coach-note');} ns.append(s);} cell.append(ns); }
+          else { const ns=document.createElement('div'); ns.className='notes'; for(let n=1;n<=9;n++){const s=document.createElement('span'); s.textContent=state.notes[i].has(n)?n:''; ns.append(s);} cell.append(ns); }
           cell.addEventListener('click',()=>select(i)); grid.append(cell);
         }
         pad.innerHTML=''; for(let n=1;n<=9;n++){const b=document.createElement('button');b.textContent=n;b.addEventListener('click',()=>enter(n));pad.append(b);} const e=document.createElement('button');e.textContent='×';e.className='erase';e.addEventListener('click',erase);pad.append(e);
@@ -169,8 +169,8 @@
         renderMessages();
       }
       function select(i){ state.selected=i; render(); }
-      function enter(n){ if(state.selected===null || state.givens[state.selected]) return toast('Scegli una casella modificabile'); const i=state.selected; if(state.mode==='note'){ if(state.notes[i].has(n))state.notes[i].delete(n);else state.notes[i].add(n); } else { state.puzzle[i]=n; state.notes[i].clear(); addMessage('user',`Ho inserito ${n} in ${cellLabel(i)}.`); } saveLocal(); render(); }
-      function erase(){ if(state.selected===null||state.givens[state.selected])return;state.puzzle[state.selected]=0;state.notes[state.selected].clear();saveLocal();render(); }
+      function enter(n){ if(state.selected===null || state.givens[state.selected]) return toast('Scegli una casella modificabile'); const i=state.selected; if(state.mode==='note'){ if(state.notes[i].has(n))state.notes[i].delete(n);else state.notes[i].add(n); } else { state.puzzle[i]=n; state.notes[i].clear(); state.coachNotes[i].clear(); addMessage('user',`Ho inserito ${n} in ${cellLabel(i)}.`); } saveLocal(); render(); }
+      function erase(){ if(state.selected===null||state.givens[state.selected])return; const i=state.selected; state.puzzle[i]=0; state.notes[i].clear(); state.coachNotes[i].clear(); saveLocal(); render(); }
       function setMode(m){state.mode=m;render();}
       function addMessage(who,text){state.messages.push({who,text}); if(state.messages.length>50)state.messages.shift(); saveLocal();}
       function renderMessages(){ messages.innerHTML=''; for(const m of state.messages){const wrap=document.createElement('div');wrap.className=`message ${m.who}`;if(m.who==='coach'){const d=document.createElement('div');d.className='coach-dot';d.textContent='◒';wrap.append(d);}const b=document.createElement('div');b.className='bubble';b.innerHTML=m.who==='coach'?`<span class="mini-label">Momo</span>${escapeHtml(m.text)}`:escapeHtml(m.text);wrap.append(b);messages.append(wrap);}messages.scrollTop=messages.scrollHeight;}
