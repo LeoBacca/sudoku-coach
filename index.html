@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f0e8">
+  <title>Sudo — Sudoku Coach</title>
+  <style>
+    :root {
+      --paper: #f5f0e8;
+      --paper-deep: #e9e0d3;
+      --ink: #252423;
+      --muted: #79736d;
+      --line: #d8cec1;
+      --line-strong: #8b8178;
+      --white: #fffdf9;
+      --blue: #4e6b83;
+      --blue-soft: #e3edf2;
+      --yellow: #f4d77a;
+      --yellow-soft: #fff3c7;
+      --green: #557d61;
+      --red: #b35c50;
+      --shadow: 0 16px 50px rgba(68, 52, 36, .11);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-width: 320px; color: var(--ink); background: var(--paper); font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    button, input { font: inherit; }
+    button { border: 0; cursor: pointer; }
+    .app-shell { min-height: 100vh; }
+    header { height: 74px; display: flex; align-items: center; justify-content: space-between; padding: 0 32px; border-bottom: 1px solid var(--line); background: rgba(255,253,249,.68); }
+    .brand { display:flex; align-items:center; gap: 12px; }
+    .brand-mark { width: 36px; height: 36px; display:grid; place-items:center; border: 2px solid var(--ink); border-radius: 10px; font-weight: 800; font-size: 20px; transform: rotate(-5deg); background: var(--yellow); }
+    .brand-name { font-weight: 800; letter-spacing: -.03em; font-size: 19px; }
+    .brand-sub { color: var(--muted); font-size: 12px; margin-left: 8px; }
+    .header-actions { display:flex; align-items:center; gap: 9px; }
+    .button { padding: 10px 14px; border-radius: 10px; background: transparent; color: var(--ink); font-size: 13px; font-weight: 700; }
+    .button:hover { background: var(--paper-deep); }
+    .button.primary { background: var(--ink); color: var(--white); }
+    .button.primary:hover { background: #403d3a; }
+    .button.small { padding: 7px 10px; font-size: 12px; }
+    main { display:grid; grid-template-columns: minmax(520px, 1.05fr) minmax(370px, .75fr); gap: 28px; max-width: 1400px; margin: 0 auto; padding: 30px 32px 38px; }
+    .eyebrow { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1, h2, p { margin: 0; }
+    h1 { margin-top: 7px; font-family: Georgia, serif; font-weight: 500; letter-spacing: -.045em; font-size: clamp(30px, 4vw, 49px); line-height: 1; }
+    .intro { display:flex; align-items:flex-end; justify-content:space-between; margin-bottom: 22px; }
+    .status { color: var(--muted); font-size: 12px; max-width: 220px; text-align:right; line-height:1.4; }
+    .board-card, .chat-card { border: 1px solid var(--line); border-radius: var(--radius); background: rgba(255,253,249,.72); box-shadow: var(--shadow); }
+    .board-card { padding: 23px; }
+    .board-top { display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px; }
+    .board-top h2 { font-family: Georgia, serif; font-size: 21px; font-weight: 500; }
+    .legend { display:flex; gap: 12px; color: var(--muted); font-size: 11px; }
+    .legend span { display:flex; align-items:center; gap: 5px; }
+    .dot { width: 8px; height: 8px; border-radius:50%; display:inline-block; }
+    .dot.given { background: var(--ink); } .dot.mine { background: var(--blue); } .dot.coach { background: var(--yellow); border: 1px solid #ccaa42; }
+    .board-wrap { max-width: 690px; margin: 0 auto; }
+    .sudoku-grid { display:grid; grid-template-columns: repeat(9, 1fr); aspect-ratio: 1; border: 2px solid var(--ink); background: var(--ink); gap: 1px; }
+    .cell { min-width: 0; position:relative; display:grid; place-items:center; background: var(--white); color: var(--blue); font-size: clamp(19px, 3.2vw, 29px); font-weight: 650; transition: background .12s, color .12s; }
+    .cell:nth-child(3n) { border-right: 2px solid var(--ink); } .cell:nth-child(9n) { border-right: 0; }
+    .cell:nth-child(n+19):nth-child(-n+27), .cell:nth-child(n+46):nth-child(-n+54) { border-bottom: 2px solid var(--ink); }
+    .cell.given { color: var(--ink); font-weight: 800; }
+    .cell.selected { background: var(--yellow-soft); box-shadow: inset 0 0 0 2px #d2a928; z-index: 2; }
+    .cell.related { background: #f4eee4; }
+    .cell.same-number { background: var(--blue-soft); }
+    .cell.coach-mark { box-shadow: inset 0 0 0 3px var(--yellow); }
+    .cell.invalid { color: var(--red); background: #f8e5e1; }
+    .cell .value { pointer-events:none; }
+    .notes { position:absolute; inset: 3px; display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); font-size: clamp(7px, 1.25vw, 11px); line-height:1; color: var(--muted); pointer-events:none; }
+    .notes span { display:grid; place-items:center; }
+    .notes .coach-note { color: var(--green); font-weight: 800; }
+    .board-footer { display:flex; justify-content:space-between; align-items:center; gap: 14px; margin-top: 17px; }
+    .selected-label { color: var(--muted); font-size: 12px; }
+    .selected-label strong { color: var(--ink); }
+    .tools { display:flex; gap: 7px; }
+    .mode { border:1px solid var(--line); background:var(--white); color:var(--muted); padding: 8px 10px; border-radius: 9px; font-size: 12px; font-weight: 700; }
+    .mode.active { color: var(--ink); border-color: var(--blue); background: var(--blue-soft); }
+    .number-pad { display:grid; grid-template-columns: repeat(9, 1fr); gap: 7px; margin-top: 13px; }
+    .number-pad button { min-height: 37px; border: 1px solid var(--line); border-radius: 9px; background: var(--white); color: var(--ink); font-weight: 750; }
+    .number-pad button:hover { border-color: var(--blue); background: var(--blue-soft); }
+    .number-pad button.erase { color: var(--red); }
+    .tip-strip { display:flex; align-items:center; gap: 10px; margin-top: 18px; padding: 11px 13px; border-radius: 10px; background: var(--yellow-soft); color:#6f5a21; font-size: 12px; line-height: 1.35; }
+    .tip-strip strong { color: #473a16; }
+    .chat-card { display:flex; flex-direction:column; height: min(760px, calc(100vh - 134px)); min-height: 590px; overflow:hidden; }
+    .chat-header { display:flex; align-items:center; justify-content:space-between; padding: 18px 20px; border-bottom:1px solid var(--line); }
+    .coach-identity { display:flex; align-items:center; gap: 11px; }
+    .mascot { width: 44px; height: 44px; display:grid; place-items:center; border-radius: 14px; background: var(--yellow); border: 1px solid #d5b344; font-size: 25px; transform: rotate(3deg); }
+    .coach-name { font-weight: 800; font-size:14px; } .coach-role { color:var(--muted); font-size:11px; margin-top:2px; }
+    .coach-status { color: var(--green); font-size: 11px; font-weight: 750; }
+    .messages { flex:1; overflow:auto; padding: 18px 19px; display:flex; flex-direction:column; gap: 13px; }
+    .message { max-width: 88%; display:flex; gap: 8px; align-items:flex-start; }
+    .message.user { align-self:flex-end; flex-direction:row-reverse; }
+    .bubble { padding: 11px 13px; border-radius: 13px 13px 13px 4px; background: var(--paper-deep); color:var(--ink); font-size:13px; line-height:1.45; }
+    .message.user .bubble { border-radius: 13px 13px 4px 13px; background: var(--ink); color:var(--white); }
+    .bubble .mini-label { display:block; margin-bottom:4px; color:var(--muted); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+    .message.user .mini-label { color:#bdc7cd; }
+    .coach-dot { width: 20px; height:20px; display:grid; place-items:center; flex:none; border-radius:7px; background:var(--yellow); font-size:12px; }
+    .quick-actions { display:flex; flex-wrap:wrap; gap: 7px; padding: 0 19px 13px; }
+    .quick-actions button { border: 1px solid var(--line); border-radius: 999px; background:var(--white); color:var(--ink); padding: 8px 11px; font-size: 11px; font-weight: 750; }
+    .quick-actions button:hover { border-color:var(--blue); background:var(--blue-soft); }
+    .chat-input { display:flex; gap: 8px; padding: 13px 17px 16px; border-top: 1px solid var(--line); }
+    .chat-input input { min-width:0; flex:1; border:1px solid var(--line); border-radius: 10px; background:var(--white); padding: 11px 12px; outline:none; font-size:13px; }
+    .chat-input input:focus { border-color:var(--blue); box-shadow: 0 0 0 3px rgba(78,107,131,.12); }
+    .send { width: 42px; border-radius:10px; background:var(--ink); color:var(--white); font-size:17px; }
+    .howto { max-width:1400px; margin: 0 auto; padding: 0 32px 34px; color:var(--muted); font-size:12px; display:flex; justify-content:space-between; gap:20px; }
+    .kbd { border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding: 1px 5px; background:var(--white); color:var(--ink); font-family:ui-monospace, monospace; font-size:10px; }
+    .toast { position:fixed; bottom:20px; left:50%; transform:translate(-50%, 18px); opacity:0; pointer-events:none; padding:11px 14px; border-radius:10px; background:var(--ink); color:var(--white); font-size:12px; transition:.2s; box-shadow:var(--shadow); }
+    .toast.show { opacity:1; transform:translate(-50%,0); }
+    @media (max-width: 980px) { main { grid-template-columns: 1fr; max-width: 720px; } .chat-card { height: 640px; } .status { max-width:none; } }
+    @media (max-width: 560px) { header { padding:0 16px; } .brand-sub, .header-actions .button:not(.primary) { display:none; } main { padding:22px 14px 28px; gap:18px; } .board-card { padding:13px; } .board-top { align-items:flex-start; flex-direction:column; gap:10px; } .legend { font-size:10px; } .chat-card { min-height:570px; height: 620px; } .howto { padding:0 14px 25px; flex-direction:column; } }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header>
+      <div class="brand"><div class="brand-mark">9</div><div><span class="brand-name">Sudo</span><span class="brand-sub">sudoku, con un coach accanto</span></div></div>
+      <div class="header-actions"><button class="button" id="newPuzzle">Nuovo puzzle</button><button class="button" id="resetPuzzle">Reset</button><button class="button primary" id="savePuzzle">Salva stato</button></div>
+    </header>
+    <main>
+      <section>
+        <div class="intro"><div><div class="eyebrow">Sessione · test coach</div><h1>Risolvi, non indovinare.</h1></div><div class="status" id="progressText">0 caselle inserite · il coach aspetta il tuo ragionamento</div></div>
+        <div class="board-card">
+          <div class="board-top"><h2>La tua griglia</h2><div class="legend"><span><i class="dot given"></i>dato</span><span><i class="dot mine"></i>tuo</span><span><i class="dot coach"></i>coach</span></div></div>
+          <div class="board-wrap"><div class="sudoku-grid" id="grid" aria-label="Griglia Sudoku"></div></div>
+          <div class="board-footer"><div class="selected-label" id="selectedLabel">Seleziona una casella</div><div class="tools"><button class="mode active" id="entryMode">Numero</button><button class="mode" id="noteMode">Annotazioni</button><button class="mode" id="coachMarks">Segni coach</button></div></div>
+          <div class="number-pad" id="numberPad"></div>
+          <div class="tip-strip"><strong>Metodo:</strong> prima guarda i vincoli. Se sei bloccato, chiedi un tip: Sudo non ti consegna la soluzione.</div>
+        </div>
+      </section>
+      <aside class="chat-card">
+        <div class="chat-header"><div class="coach-identity"><div class="mascot">◒</div><div><div class="coach-name">Momo</div><div class="coach-role">coach di Sudoku · niente spoiler</div></div></div><div class="coach-status">● online</div></div>
+        <div class="messages" id="messages"></div>
+        <div class="quick-actions"><button data-action="tip">Dammi un tip</button><button data-action="technique">Che tecnica?</button><button data-action="why">Perché?</button><button data-action="check">Controlla il mio passo</button></div>
+        <form class="chat-input" id="chatForm"><input id="chatInput" autocomplete="off" placeholder="Scrivi a Momo…"><button class="send" aria-label="Invia">↑</button></form>
+      </aside>
+    </main>
+    <div class="howto"><span>Clicca una casella · <span class="kbd">1–9</span> inserisci · <span class="kbd">N</span> annota · <span class="kbd">Esc</span> deseleziona</span><span id="autosaveText">Stato salvato localmente nel browser</span></div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+    (() => {
+      const seed = '600000100000030000480609053000895000009040300000213000720301086000070000003000004';
+      const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), notes: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), selected: null, mode: 'entry', coachMarks: false, messages: [] };
+      const $ = id => document.getElementById(id);
+      const grid = $('grid'), pad = $('numberPad'), messages = $('messages');
+      const idx = (r,c) => r*9+c, rc = i => [Math.floor(i/9), i%9];
+      const peers = i => { const [r,c]=rc(i), out=new Set(); for(let k=0;k<9;k++){out.add(idx(r,k));out.add(idx(k,c));} const br=Math.floor(r/3)*3,bc=Math.floor(c/3)*3; for(let rr=br;rr<br+3;rr++)for(let cc=bc;cc<bc+3;cc++)out.add(idx(rr,cc)); out.delete(i); return out; };
+      const unitCells = (type,n) => type==='row' ? Array.from({length:9},(_,c)=>idx(n,c)) : type==='col' ? Array.from({length:9},(_,r)=>idx(r,n)) : Array.from({length:9},(_,k)=>idx(Math.floor(n/3)*3+Math.floor(k/3),n%3*3+k%3));
+      const candidates = i => { if(state.puzzle[i]) return new Set(); const used=new Set([...peers(i)].map(p=>state.puzzle[p]).filter(Boolean)); return new Set([...Array(9)].map((_,n)=>n+1).filter(n=>!used.has(n))); };
+      const cellLabel = i => { const [r,c]=rc(i); return `R${r+1}C${c+1}`; };
+      function render(){
+        grid.innerHTML='';
+        const selectedVal=state.selected!==null?state.puzzle[state.selected]:0;
+        for(let i=0;i<81;i++){
+          const cell=document.createElement('button'); cell.className='cell'; cell.setAttribute('aria-label',cellLabel(i));
+          const [r,c]=rc(i); if(state.givens[i]) cell.classList.add('given');
+          if(state.selected===i) cell.classList.add('selected');
+          if(state.selected!==null && peers(state.selected).has(i)) cell.classList.add('related');
+          if(selectedVal && state.puzzle[i]===selectedVal) cell.classList.add('same-number');
+          if(state.coachMarks && state.coachNotes[i].size) cell.classList.add('coach-mark');
+          if(state.puzzle[i]) { const span=document.createElement('span'); span.className='value'; span.textContent=state.puzzle[i]; cell.append(span); }
+          else { const ns=document.createElement('div'); ns.className='notes'; for(let n=1;n<=9;n++){const s=document.createElement('span'); s.textContent=state.notes[i].has(n)?n:''; if(state.coachNotes[i].has(n)) {s.textContent=n;s.classList.add('coach-note');} ns.append(s);} cell.append(ns); }
+          cell.addEventListener('click',()=>select(i)); grid.append(cell);
+        }
+        pad.innerHTML=''; for(let n=1;n<=9;n++){const b=document.createElement('button');b.textContent=n;b.addEventListener('click',()=>enter(n));pad.append(b);} const e=document.createElement('button');e.textContent='×';e.className='erase';e.addEventListener('click',erase);pad.append(e);
+        $('entryMode').classList.toggle('active',state.mode==='entry'); $('noteMode').classList.toggle('active',state.mode==='note'); $('coachMarks').classList.toggle('active',state.coachMarks);
+        $('selectedLabel').innerHTML=state.selected===null?'Seleziona una casella':`<strong>${cellLabel(state.selected)}</strong> · ${state.givens[state.selected]?'dato':'modificabile'}${state.puzzle[state.selected]?' · '+state.puzzle[state.selected]:''}`;
+        const count=state.puzzle.filter(Boolean).length-state.givens.filter(Boolean).length; $('progressText').textContent=`${count} caselle inserite · ${state.puzzle.filter(Boolean).length}/81 riempite`;
+        renderMessages();
+      }
+      function select(i){ state.selected=i; render(); }
+      function enter(n){ if(state.selected===null || state.givens[state.selected]) return toast('Scegli una casella modificabile'); const i=state.selected; if(state.mode==='note'){ if(state.notes[i].has(n))state.notes[i].delete(n);else state.notes[i].add(n); } else { state.puzzle[i]=n; state.notes[i].clear(); addMessage('user',`Ho inserito ${n} in ${cellLabel(i)}.`); } saveLocal(); render(); }
+      function erase(){ if(state.selected===null||state.givens[state.selected])return;state.puzzle[state.selected]=0;state.notes[state.selected].clear();saveLocal();render(); }
+      function setMode(m){state.mode=m;render();}
+      function addMessage(who,text){state.messages.push({who,text}); if(state.messages.length>50)state.messages.shift(); saveLocal();}
+      function renderMessages(){ messages.innerHTML=''; for(const m of state.messages){const wrap=document.createElement('div');wrap.className=`message ${m.who}`;if(m.who==='coach'){const d=document.createElement('div');d.className='coach-dot';d.textContent='◒';wrap.append(d);}const b=document.createElement('div');b.className='bubble';b.innerHTML=m.who==='coach'?`<span class="mini-label">Momo</span>${escapeHtml(m.text)}`:escapeHtml(m.text);wrap.append(b);messages.append(wrap);}messages.scrollTop=messages.scrollHeight;}
+      const escapeHtml = s => s.replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+      function findCoachState(){
+        const result={singles:[],hidden:[],locked:[],pairs:[]};
+        for(let i=0;i<81;i++){if(!state.puzzle[i]&&candidates(i).size===1)result.singles.push(i);}
+        for(const type of ['row','col','box'])for(let n=0;n<9;n++){const cells=unitCells(type,n);for(let digit=1;digit<=9;digit++){const hits=cells.filter(i=>!state.puzzle[i]&&candidates(i).has(digit));if(hits.length===1)result.hidden.push({digit,i:hits[0],type,n});}}
+        for(const type of ['row','col','box'])for(let n=0;n<9;n++){const cells=unitCells(type,n);for(let digit=1;digit<=9;digit++){const hits=cells.filter(i=>!state.puzzle[i]&&candidates(i).has(digit));if(hits.length>=2){const rows=new Set(hits.map(i=>rc(i)[0])),cols=new Set(hits.map(i=>rc(i)[1]));if(type==='box'&&rows.size===1)result.locked.push({digit,type,n,line:'riga',value:[...rows][0],cells:hits});if(type==='box'&&cols.size===1)result.locked.push({digit,type,n,line:'colonna',value:[...cols][0],cells:hits});}}}
+        return result;
+      }
+      function coachReply(kind){
+        const f=findCoachState();
+        if(kind==='tip'){ if(f.singles.length){const i=f.singles[0];state.coachNotes[i].add([...candidates(i)][0]);return `Parti da una casella con un solo candidato. Guarda ${cellLabel(i)}: non ti dico ancora il numero — ricavalo dai suoi tre vincoli.`;} if(f.hidden.length){const x=f.hidden[0];state.coachNotes[x.i].add(x.digit);return `Concentrati sul ${x.digit} nella ${x.type==='row'?'riga':x.type==='col'?'colonna':'box'} indicata dai candidati. C'è una posizione obbligata, ma voglio che la trovi tu.`;} if(f.locked.length){const x=f.locked[0];return `Prova i Locked Candidates: cerca il ${x.digit} nel box e chiediti se le sue posizioni sono tutte sulla stessa ${x.line}.`;} return 'Qui serve guardare le interazioni tra unità, non tentare numeri a caso. Parti dal numero con meno posizioni candidate.'; }
+        if(kind==='technique'){ if(f.singles.length)return 'Naked single / hidden single.'; if(f.hidden.length)return 'Hidden single.'; if(f.locked.length)return 'Locked candidates.'; return 'Naked pair o hidden pair: controlla prima le unità con candidati più stretti.'; }
+        if(kind==='why')return 'Ogni deduzione deve essere vera contemporaneamente in riga, colonna e box 3×3. Se una regola funziona in una sola unità, non basta ancora.';
+        if(kind==='check')return 'Dimmi la tua mossa in formato R3C7 = 4 e la controllo: non ti darò altre mosse automaticamente.';
+        return 'Dimmi dove sei bloccato: numero, casella o tecnica. Ti do un solo passo.';
+      }
+      function ask(text){addMessage('user',text);const lower=text.toLowerCase();let kind=lower.includes('tecnic')?'technique':lower.includes('perch')?'why':lower.includes('controll')?'check':'tip';setTimeout(()=>{addMessage('coach',coachReply(kind));render();},120);render();}
+      function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
+      function saveLocal(){localStorage.setItem('sudo-state',JSON.stringify({puzzle:state.puzzle,givens:state.givens,notes:state.notes.map(s=>[...s]),coachNotes:state.coachNotes.map(s=>[...s]),messages:state.messages}));$('autosaveText').textContent='Salvato localmente · aggiornato ora';}
+      function loadLocal(){try{const raw=JSON.parse(localStorage.getItem('sudo-state'));if(!raw)return;state.puzzle=raw.puzzle;state.givens=raw.givens;state.notes=raw.notes.map(a=>new Set(a));state.coachNotes=raw.coachNotes.map(a=>new Set(a));state.messages=raw.messages||[];}catch(e){console.warn('local state ignored',e);}}
+      function reset(){state.puzzle=[...state.givens];state.notes=Array.from({length:81},()=>new Set());state.coachNotes=Array.from({length:81},()=>new Set());state.messages=[];addMessage('coach','Griglia resettata. Scegli una casella o chiedimi un tip quando vuoi.');saveLocal();render();}
+      function newPuzzle(){reset();addMessage('coach','Per ora ho caricato il puzzle di test. Il prossimo passo sarà importare foto o stringhe di puzzle.');render();}
+      $('entryMode').onclick=()=>setMode('entry');$('noteMode').onclick=()=>setMode('note');$('coachMarks').onclick=()=>{state.coachMarks=!state.coachMarks;render();};$('resetPuzzle').onclick=reset;$('newPuzzle').onclick=newPuzzle;$('savePuzzle').onclick=()=>{saveLocal();toast('Stato salvato nel browser');};
+      document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const k=b.dataset.action;addMessage('user',b.textContent);setTimeout(()=>{addMessage('coach',coachReply(k));render();},120);render();});
+      $('chatForm').addEventListener('submit',e=>{e.preventDefault();const v=$('chatInput').value.trim();if(v){$('chatInput').value='';ask(v);}});
+      document.addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='9')enter(Number(e.key));if(e.key.toLowerCase()==='n')setMode('note');if(e.key==='Escape'){state.selected=null;render();}if(e.key==='Backspace'||e.key==='Delete')erase();});
+      loadLocal(); if(!state.messages.length)addMessage('coach','Ciao Leo. Questa è la tua griglia: io ti accompagno, ma non la risolvo al posto tuo. Parti da un’area oppure chiedimi un tip.'); render();
+    })();
+  </script>
+</body>
+</html>
