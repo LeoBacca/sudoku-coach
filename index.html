@@ -124,9 +124,23 @@
     .mode-choice button:hover { border-color:var(--blue); background:var(--blue-soft); }
     .mode-choice strong { display:block; margin-bottom:4px; font-size:13px; }
     .mode-choice span { display:block; color:var(--muted); font-size:11px; line-height:1.35; }
-    .custom-input { width:100%; min-height:112px; resize:vertical; border:1px solid var(--line); border-radius:10px; padding:11px; background:#fffdf9; color:var(--ink); font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; outline:none; }
-    .custom-input:focus { border-color:var(--blue); box-shadow:0 0 0 3px rgba(78,107,131,.12); }
-    .custom-hint { margin:8px 0 16px; color:var(--muted); font-size:11px; }
+    .custom-editor { display:grid; grid-template-columns:minmax(250px, 330px) 1fr; gap:16px; align-items:start; }
+    .custom-grid { display:grid; grid-template-columns:repeat(9,1fr); aspect-ratio:1; border:2px solid var(--ink); background:var(--ink); gap:1px; }
+    .custom-cell { min-width:0; border:0; display:grid; place-items:center; background:var(--white); color:var(--blue); font-size:clamp(15px,4vw,23px); font-weight:700; cursor:pointer; }
+    .custom-cell:nth-child(3n) { border-right:2px solid var(--ink); } .custom-cell:nth-child(9n) { border-right:0; }
+    .custom-cell:nth-child(n+19):nth-child(-n+27), .custom-cell:nth-child(n+46):nth-child(-n+54) { border-bottom:2px solid var(--ink); }
+    .custom-cell.selected { background:var(--yellow-soft); box-shadow:inset 0 0 0 2px #d2a928; }
+    .custom-cell.given { color:var(--ink); }
+    .custom-cell.conflict { color:var(--red); background:#f8e5e1; }
+    .custom-entry-side { display:grid; gap:10px; }
+    .custom-entry-label { color:var(--muted); font-size:12px; line-height:1.4; }
+    .custom-pad { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+    .custom-pad button { min-height:34px; border:1px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink); font-weight:750; }
+    .custom-pad button:hover { border-color:var(--blue); background:var(--blue-soft); }
+    .custom-pad .erase-custom { color:var(--red); }
+    .paste-toggle { justify-self:start; padding:0; background:transparent; color:var(--blue); font-size:11px; text-decoration:underline; }
+    .paste-toggle:hover { color:var(--ink); }
+    @media (max-width:560px) { .custom-editor { grid-template-columns:1fr; } .custom-entry-side { grid-template-columns:1fr auto; align-items:center; } .custom-entry-label { grid-column:1/-1; } .custom-pad { grid-column:1/-1; } }
     .modal-error { min-height:17px; margin-top:8px; color:var(--red); font-size:12px; }
     @media (max-width: 560px) { header { padding:0 16px; } .brand-sub, .header-actions .button:not(.primary) { display:none; } main { padding:22px 14px 28px; gap:18px; } .board-card { padding:13px; } .board-top { align-items:flex-start; flex-direction:column; gap:10px; } .legend { font-size:10px; } .chat-card { min-height:570px; height: 620px; } .howto { padding:0 14px 25px; flex-direction:column; } .mode-choice { grid-template-columns:1fr; } }
   </style>
@@ -164,11 +178,18 @@
       <p>Scegli come vuoi iniziare questa sessione.</p>
       <div class="mode-choice">
         <button id="generateMode" type="button"><strong>Genera un nuovo puzzle</strong><span>Una combinazione nuova, con soluzione unica e difficoltà media.</span></button>
-        <button id="customMode" type="button"><strong>Usa un puzzle personalizzato</strong><span>Incolla la tua griglia da 81 caratteri oppure 9 righe.</span></button>
+        <button id="customMode" type="button"><strong>Usa un puzzle personalizzato</strong><span>Compila la griglia cella per cella, con tastiera o tastierino.</span></button>
       </div>
       <div id="customPanel" hidden>
-        <textarea id="customPuzzle" class="custom-input" spellcheck="false" placeholder="600000100\n000030000\n..."></textarea>
-        <div class="custom-hint">Usa cifre da 1 a 9 per i dati e 0 oppure . per le celle vuote.</div>
+        <div class="custom-editor">
+          <div class="custom-grid" id="customGrid" aria-label="Inserisci il puzzle personalizzato"></div>
+          <div class="custom-entry-side">
+            <div class="custom-entry-label" id="customEntryLabel">Clicca una cella e scegli il numero. Le celle vuote restano vuote.</div>
+            <div class="custom-pad" id="customPad"></div>
+            <button class="paste-toggle" id="pasteToggle" type="button">Preferisci incollare una stringa?</button>
+          </div>
+        </div>
+        <textarea id="customPuzzle" hidden spellcheck="false"></textarea>
         <div class="modal-error" id="customError"></div>
         <div class="modal-actions"><button class="button" id="cancelCustom" type="button">Annulla</button><button class="button primary" id="loadCustom" type="button">Inizia partita</button></div>
       </div>
@@ -178,7 +199,7 @@
     (() => {
       const seed = '600000100000030000480609053000895000009040300000213000720301086000070000003000004';
       const PUBLIC_API_URL = 'https://paxil-kennedy-digital-perception.trycloudflare.com';
-      const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), modeName: 'custom', notes: Array.from({length:81}, () => new Set()), eliminated: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), coachCells: new Set(), selected: null, mode: 'entry', coachMarks: false, messages: [] };
+      const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), modeName: 'custom', notes: Array.from({length:81}, () => new Set()), eliminated: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), coachCells: new Set(), selected: null, customDraft: Array(81).fill(0), customSelected: 0, customPasteMode: false, mode: 'entry', coachMarks: false, messages: [] };
       const $ = id => document.getElementById(id);
       const grid = $('grid'), pad = $('numberPad'), messages = $('messages');
       const idx = (r,c) => r*9+c, rc = i => [Math.floor(i/9), i%9];
@@ -186,6 +207,7 @@
       const unitCells = (type,n) => type==='row' ? Array.from({length:9},(_,c)=>idx(n,c)) : type==='col' ? Array.from({length:9},(_,r)=>idx(r,n)) : Array.from({length:9},(_,k)=>idx(Math.floor(n/3)*3+Math.floor(k/3),n%3*3+k%3));
       const candidates = i => { if(state.puzzle[i]) return new Set(); const used=new Set([...peers(i)].map(p=>state.puzzle[p]).filter(Boolean)); return new Set([...Array(9)].map((_,n)=>n+1).filter(n=>!used.has(n)&&!state.eliminated[i].has(n))); };
       const cellLabel = i => { const [r,c]=rc(i); return `R${r+1}C${c+1}`; };
+      function renderCustomEditor(){const board=$('customGrid');if(!board)return;board.tabIndex=0;board.innerHTML='';for(let i=0;i<81;i++){const cell=document.createElement('button');cell.type='button';cell.className='custom-cell';cell.setAttribute('aria-label',`Inserisci ${cellLabel(i)}`);if(state.customSelected===i)cell.classList.add('selected');if(state.customDraft[i]){cell.textContent=state.customDraft[i];cell.classList.add('given');}if(state.customDraft[i]&&[...peers(i)].some(p=>state.customDraft[p]===state.customDraft[i]))cell.classList.add('conflict');cell.onclick=()=>{state.customSelected=i;renderCustomEditor();};board.append(cell);}const digit=state.customDraft[state.customSelected];$('customEntryLabel').textContent=`${cellLabel(state.customSelected)} · ${digit?'numero '+digit:'vuota'} · scegli un numero oppure cancella`;$('customPad').innerHTML='';for(let n=1;n<=9;n++){const b=document.createElement('button');b.type='button';b.textContent=n;b.onclick=()=>{state.customDraft[state.customSelected]=n;customMove(1);};$('customPad').append(b);}const erase=document.createElement('button');erase.type='button';erase.className='erase-custom';erase.textContent='Cancella';erase.onclick=()=>{state.customDraft[state.customSelected]=0;renderCustomEditor();};$('customPad').append(erase);$('customPuzzle').hidden=!state.customPasteMode;$('customGrid').hidden=state.customPasteMode;$('customPad').hidden=state.customPasteMode;$('customEntryLabel').hidden=state.customPasteMode;$('pasteToggle').textContent=state.customPasteMode?'Torna alla griglia di inserimento':'Preferisci incollare una stringa?';}
       function render(){
         grid.innerHTML='';
         const selectedVal=state.selected!==null?state.puzzle[state.selected]:0;
@@ -268,15 +290,19 @@
       function closeGameMenu(){ $('gameMenuPanel').classList.remove('open'); $('newPuzzle').setAttribute('aria-expanded','false'); }
       function toggleGameMenu(){const panel=$('gameMenuPanel');const open=panel.classList.toggle('open');$('newPuzzle').setAttribute('aria-expanded',String(open));}
       function newPuzzle(){toggleGameMenu();}
+      function draftString(){return state.customDraft.join('');}
+      function customMove(delta){const [r,c]=rc(state.customSelected);let nr=r,nc=c+delta;if(nc<0){nr=Math.max(0,r-1);nc=8;}if(nc>8){nr=Math.min(8,r+1);nc=0;}state.customSelected=idx(nr,nc);renderCustomEditor();}
+      function customKeydown(e){if(state.customPasteMode)return;const key=e.key.toLowerCase();if(key>='1'&&key<='9'){state.customDraft[state.customSelected]=Number(key);customMove(1);e.preventDefault();}else if(key==='0'||key==='.'||key==='backspace'||key==='delete'){state.customDraft[state.customSelected]=0;if(key==='backspace'&&state.customSelected>0)customMove(-1);else renderCustomEditor();e.preventDefault();}else if(['arrowleft','arrowright','arrowup','arrowdown'].includes(key)){const [r,c]=rc(state.customSelected);const nr=Math.max(0,Math.min(8,r+(key==='arrowup'?-1:key==='arrowdown'?1:0)));const nc=Math.max(0,Math.min(8,c+(key==='arrowleft'?-1:key==='arrowright'?1:0)));state.customSelected=idx(nr,nc);renderCustomEditor();e.preventDefault();}}
+      function openCustomEditor(){state.customDraft=Array(81).fill(0);state.customSelected=0;state.customPasteMode=false;openNewGame();$('customPanel').hidden=false;renderCustomEditor();$('customGrid').focus();}
       function startGenerated(){closeNewGame();closeGameMenu();clearSession(generatePuzzle(),'generated');}
-      function startCustom(){const result=normalisePuzzle($('customPuzzle').value);if(result.error){$('customError').textContent=result.error;return;}closeNewGame();closeGameMenu();clearSession(result.puzzle,'custom');}
-      function showCustom(){openNewGame(); $('customPanel').hidden=false; $('customPuzzle').value=state.modeName==='custom'?state.givens.map(n=>n||0).join(''):''; $('customPuzzle').focus();}
+      function startCustom(){const input=state.customPasteMode?$('customPuzzle').value:draftString();const result=normalisePuzzle(input);if(result.error){$('customError').textContent=result.error;return;}closeNewGame();closeGameMenu();clearSession(result.puzzle,'custom');}
+      function showCustom(){openCustomEditor();}
       $('entryMode').onclick=()=>setMode('entry');$('noteMode').onclick=()=>setMode('note');$('coachMarks').onclick=()=>{state.coachMarks=!state.coachMarks;render();};$('resetPuzzle').onclick=reset;$('newPuzzle').onclick=newPuzzle;$('savePuzzle').onclick=()=>{saveLocal();toast('Stato salvato nel browser');};
-      $('generateMode').onclick=startGenerated;$('customMode').onclick=showCustom;$('generateMenu').onclick=startGenerated;$('customMenu').onclick=showCustom;$('cancelCustom').onclick=closeNewGame;$('loadCustom').onclick=startCustom;
+      $('generateMode').onclick=startGenerated;$('customMode').onclick=showCustom;$('generateMenu').onclick=startGenerated;$('customMenu').onclick=showCustom;$('cancelCustom').onclick=closeNewGame;$('loadCustom').onclick=startCustom;$('pasteToggle').onclick=()=>{state.customPasteMode=!state.customPasteMode;if(state.customPasteMode)$('customPuzzle').value=draftString();else state.customDraft=[...normalisePuzzle($('customPuzzle').value).puzzle||Array(81).fill(0)];renderCustomEditor();};
       document.addEventListener('click',e=>{if(!e.target.closest('.game-menu'))closeGameMenu();});
       document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const k=b.dataset.action;const prompts={tip:'Dammi un tip.',technique:'Che tecnica devo usare?',why:'Perché?',check:'Controlla il mio passo.'};ask(prompts[k],k);});
       $('chatForm').addEventListener('submit',e=>{e.preventDefault();const v=$('chatInput').value.trim();if(v){$('chatInput').value='';ask(v);}});
-      document.addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='9')enter(Number(e.key));if(e.key.toLowerCase()==='n')setMode('note');if(e.key==='Escape'){state.selected=null;render();}if(e.key==='Backspace'||e.key==='Delete')erase();});
+      document.addEventListener('keydown',e=>{if(!$('newGameModal').hidden&&!$('customPanel').hidden&&!state.customPasteMode){customKeydown(e);return;}if(e.key>='1'&&e.key<='9')enter(Number(e.key));if(e.key.toLowerCase()==='n')setMode('note');if(e.key==='Escape'){state.selected=null;render();}if(e.key==='Backspace'||e.key==='Delete')erase();});
       loadLocal(); if(!state.messages.length)addMessage('coach','Ciao Leo. Questa è la tua griglia: io ti accompagno, ma non la risolvo al posto tuo. Parti da un’area oppure chiedimi un tip.'); render();
     })();
   </script>
