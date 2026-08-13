@@ -193,13 +193,15 @@
       function apiUrl(){return (localStorage.getItem('sudo-api-url')||PUBLIC_API_URL).replace(/\/$/,'');}
       function gridString(){return state.puzzle.join('');}
       function notesPayload(){return Object.fromEntries(state.notes.map((set,i)=>set.size?[cellLabel(i),[...set].sort()]:null).filter(Boolean));}
+      function recentMessagesPayload(){return state.messages.filter(m=>m.text&&m.text!=='…').slice(-12).map(m=>({role:m.who==='coach'?'assistant':'user',content:m.text}));}
+      function currentGamePayload(text){return {message:text,grid:gridString(),givens:[...state.givens],notes:notesPayload(),selected_cell:state.selected===null?null:cellLabel(state.selected),recent_messages:recentMessagesPayload(),help_level:2};}
       async function ask(text, kindOverride=null){
         addMessage('user',text); render();
         const url=apiUrl();
         if(!url){setTimeout(()=>{addMessage('coach',coachReply(kindOverride||'tip'));render();},120);return;}
         addMessage('coach','…'); render();
         try {
-          const response=await fetch(`${url}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,grid:gridString(),notes:notesPayload(),help_level:2})});
+          const response=await fetch(`${url}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(currentGamePayload(text))});
           const data=await response.json();
           if(!response.ok) throw new Error(data.detail||`HTTP ${response.status}`);
           state.messages.pop(); addMessage('coach',data.reply||'Non ho ricevuto una risposta dal coach.');
