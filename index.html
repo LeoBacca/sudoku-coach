@@ -139,6 +139,7 @@
   <script>
     (() => {
       const seed = '600000100000030000480609053000895000009040300000213000720301086000070000003000004';
+      const PUBLIC_API_URL = 'https://paxil-kennedy-digital-perception.trycloudflare.com';
       const state = { puzzle: seed.split('').map(Number), givens: seed.split('').map(Number), notes: Array.from({length:81}, () => new Set()), coachNotes: Array.from({length:81}, () => new Set()), selected: null, mode: 'entry', coachMarks: false, messages: [] };
       const $ = id => document.getElementById(id);
       const grid = $('grid'), pad = $('numberPad'), messages = $('messages');
@@ -189,14 +190,32 @@
         if(kind==='check')return 'Dimmi la tua mossa in formato R3C7 = 4 e la controllo: non ti darò altre mosse automaticamente.';
         return 'Dimmi dove sei bloccato: numero, casella o tecnica. Ti do un solo passo.';
       }
-      function ask(text){addMessage('user',text);const lower=text.toLowerCase();let kind=lower.includes('tecnic')?'technique':lower.includes('perch')?'why':lower.includes('controll')?'check':'tip';setTimeout(()=>{addMessage('coach',coachReply(kind));render();},120);render();}
+      function apiUrl(){return (localStorage.getItem('sudo-api-url')||PUBLIC_API_URL).replace(/\/$/,'');}
+      function gridString(){return state.puzzle.join('');}
+      function notesPayload(){return Object.fromEntries(state.notes.map((set,i)=>set.size?[cellLabel(i),[...set].sort()]:null).filter(Boolean));}
+      async function ask(text, kindOverride=null){
+        addMessage('user',text); render();
+        const url=apiUrl();
+        if(!url){setTimeout(()=>{addMessage('coach',coachReply(kindOverride||'tip'));render();},120);return;}
+        addMessage('coach','…'); render();
+        try {
+          const response=await fetch(`${url}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:text,grid:gridString(),notes:notesPayload(),help_level:2})});
+          const data=await response.json();
+          if(!response.ok) throw new Error(data.detail||`HTTP ${response.status}`);
+          state.messages.pop(); addMessage('coach',data.reply||'Non ho ricevuto una risposta dal coach.');
+          for(const label of (data.highlight_cells||[])){const m=label.match(/^R([1-9])C([1-9])$/);if(m)state.coachNotes[(Number(m[1])-1)*9+Number(m[2])-1].add(...(data.evidence?.facts?.[0]?.digit?[data.evidence.facts[0].digit]:[]));}
+          state.coachMarks=true; saveLocal(); render();
+        } catch(error) {
+          state.messages.pop(); addMessage('coach',`Non riesco a raggiungere il coach vero: ${error.message}.`); render();
+        }
+      }
       function toast(t){const el=$('toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),1800);}
       function saveLocal(){localStorage.setItem('sudo-state',JSON.stringify({puzzle:state.puzzle,givens:state.givens,notes:state.notes.map(s=>[...s]),coachNotes:state.coachNotes.map(s=>[...s]),messages:state.messages}));$('autosaveText').textContent='Salvato localmente · aggiornato ora';}
       function loadLocal(){try{const raw=JSON.parse(localStorage.getItem('sudo-state'));if(!raw)return;state.puzzle=raw.puzzle;state.givens=raw.givens;state.notes=raw.notes.map(a=>new Set(a));state.coachNotes=raw.coachNotes.map(a=>new Set(a));state.messages=raw.messages||[];}catch(e){console.warn('local state ignored',e);}}
       function reset(){state.puzzle=[...state.givens];state.notes=Array.from({length:81},()=>new Set());state.coachNotes=Array.from({length:81},()=>new Set());state.messages=[];addMessage('coach','Griglia resettata. Scegli una casella o chiedimi un tip quando vuoi.');saveLocal();render();}
       function newPuzzle(){reset();addMessage('coach','Per ora ho caricato il puzzle di test. Il prossimo passo sarà importare foto o stringhe di puzzle.');render();}
       $('entryMode').onclick=()=>setMode('entry');$('noteMode').onclick=()=>setMode('note');$('coachMarks').onclick=()=>{state.coachMarks=!state.coachMarks;render();};$('resetPuzzle').onclick=reset;$('newPuzzle').onclick=newPuzzle;$('savePuzzle').onclick=()=>{saveLocal();toast('Stato salvato nel browser');};
-      document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const k=b.dataset.action;addMessage('user',b.textContent);setTimeout(()=>{addMessage('coach',coachReply(k));render();},120);render();});
+      document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>{const k=b.dataset.action;const prompts={tip:'Dammi un tip.',technique:'Che tecnica devo usare?',why:'Perché?',check:'Controlla il mio passo.'};ask(prompts[k],k);});
       $('chatForm').addEventListener('submit',e=>{e.preventDefault();const v=$('chatInput').value.trim();if(v){$('chatInput').value='';ask(v);}});
       document.addEventListener('keydown',e=>{if(e.key>='1'&&e.key<='9')enter(Number(e.key));if(e.key.toLowerCase()==='n')setMode('note');if(e.key==='Escape'){state.selected=null;render();}if(e.key==='Backspace'||e.key==='Delete')erase();});
       loadLocal(); if(!state.messages.length)addMessage('coach','Ciao Leo. Questa è la tua griglia: io ti accompagno, ma non la risolvo al posto tuo. Parti da un’area oppure chiedimi un tip.'); render();
